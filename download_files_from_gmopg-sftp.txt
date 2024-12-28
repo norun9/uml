@@ -58,6 +58,7 @@ activate GCSInteractor
 GCSInteractor -> GCSInteractor: 「有効性チェック依頼ファイル」のローカルdstファイルパスを取得、Open
 GCSInteractor -> GCSInteractor: GCSオブジェクトパスを生成、「cardvaliditycheck/request/dt=YYYY-MM-DD/merp_recurringfile_req_YYYYMMDD」
 GCSInteractor -> GCSBucket: アップロード
+return
 deactivate GCSInteractor
 
 fetch -> Spanner: fetchフェーズ"終了"レコード挿入

@@ -11,11 +11,11 @@ database Spanner
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 activate fetch
-alt skip flag is true
+alt スキップフラグがTrueかどうか
     fetch -> fetch: 処理を終了
     return ローカルの「有効性チェック依頼ファイル」返却
 else
-    fetch -> fetch: 処理続行
+    fetch --> fetch: 処理続行
 end
 fetch -> Spanner: fetchフェーズ"開始"レコード挿入
 fetch -> GMOPGInteractor

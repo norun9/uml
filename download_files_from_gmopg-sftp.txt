@@ -1,15 +1,12 @@
 @startuml download_files_from_gmopg-sftp
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-scale 2.0
-skinparam DefaultFontName メイリオ
-title GMOPG-SFTPから「MD5 checksum」と「有効性チェック依頼ファイル」を取得
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 participant fetch
 participant GMOPGInteractor
 participant SFTPClient
+participant ChecksumValidator
+participant GCSInteractor
 database SFTPServer
+database GCSBucket
 database Spanner
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 
@@ -18,31 +15,52 @@ alt skip flag is true
     fetch -> fetch: 処理を終了
     return ローカルの「有効性チェック依頼ファイル」返却
 else
-    fetch -> fetch
+    fetch -> fetch: 処理続行
 end
-fetch -> Spanner: fetchフェーズ開始レコード追加
+fetch -> Spanner: fetchフェーズ"開始"レコード挿入
 fetch -> GMOPGInteractor
-
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 activate GMOPGInteractor
-
-box 処理対象範囲
-    loop 「有効性チェック依頼ファイル」と「MD5 checksum」を取得
-        GMOPGInteractor -> GMOPGInteractor: ファイルパス生成
-        note right of GMOPGInteractor: ファイルパスはリモートパスとローカルdstのパスを含む
-        GMOPGInteractor -> SFTPClient
-        activate SFTPClient
-        SFTPClient -> SFTPClient: dstファイル新規作成
-        SFTPClient -> SFTPServer: ファイル取得
-        SFTPClient -> SFTPClient: ファイル内容をdstに書き込む
-        return
-        return: ローカルdstパスを返却
-        deactivate SFTPClient
-    end loop
-end box
+loop 2(「有効性チェック依頼ファイル」、「MD5 checksum」)
+    GMOPGInteractor -> GMOPGInteractor: ファイルパス生成
+    note right of GMOPGInteractor: ファイルパスは"SFTPリモートパス"と"ローカルdstパス"を含む
+    GMOPGInteractor -> SFTPClient
+    activate SFTPClient
+    SFTPClient -> SFTPClient: dstファイル新規作成
+    SFTPClient -> SFTPServer: ファイル取得
+    SFTPClient -> SFTPClient: ファイル内容をdstに書き込む
+    return: ローカルdstパスを返却
+    deactivate SFTPClient
+end
+alt ファイル取得時のエラーが１つ以上存在する場合
+    GMOPGInteractor --> fetch: エラーを返却
+else
+    GMOPGInteractor --> fetch: 「有効性チェック依頼ファイル」、「MD5 checksum」のdstファイルパス返却、処理続行
+end
 deactivate GMOPGInteractor
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+fetch -> ChecksumValidator
+note right of ChecksumValidator: 「有効性チェック依頼ファイル」破損チェック
+activate ChecksumValidator
+ChecksumValidator -> ChecksumValidator:「有効性チェック依頼ファイル」のMD5 checksumを計算
+ChecksumValidator -> ChecksumValidator: 「MD5 checksum」とchecksumの比較を行う
+alt checksumが異なる場合
+    ChecksumValidator --> fetch: エラーを返却
+else
+    ChecksumValidator --> fetch: 処理続行
+end
+deactivate ChecksumValidator
+
+fetch -> GCSInteractor
+activate GCSInteractor
+GCSInteractor -> GCSInteractor: 「有効性チェック依頼ファイル」のローカルdstファイルパスを取得、Open
+GCSInteractor -> GCSInteractor: GCSオブジェクトパスを生成、「cardvaliditycheck/request/dt=YYYY-MM-DD/merp_recurringfile_req_YYYYMMDD」
+GCSInteractor -> GCSBucket: アップロード
+deactivate GCSInteractor
+
+fetch -> Spanner: fetchフェーズ"終了"レコード挿入
 
 deactivate fetch
 

@@ -7,8 +7,8 @@ participant ListUserIDManager
 participant ListUserIDWorker
 participant CardIDChunkCollector
 
-entity TaskChannel << (C, #f8fca4) >>
-entity ResultChannel << (C, #f8fca4) >>
+entity TaskChannel << (L, #ADD1B2) >>
+entity ResultChannel << (L, #ADD1B2) >>
 
 database userIDToCardList << (L, #ADD1B2) >>
 database "/tmp" as tmp << (L, #ADD1B2) >>
@@ -37,7 +37,7 @@ group Task Consumer
         activate ListUserIDWorker
         ListUserIDWorker -> CardIDChunkCollector
         
-        loop#LightBlue 【<font color=red>Goroutine</font>】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
+        loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
             activate CardIDChunkCollector
             TaskChannel --> CardIDChunkCollector: Get the chunk file path from channel
             CardIDChunkCollector -> tmp: Fetch the chunk file and open it
@@ -48,8 +48,8 @@ group Task Consumer
                 alt#Gold EOF
                     CardIDChunkCollector -> CardIDChunkCollector: Exit loop
                 end
-                CardIDChunkCollector -> CardIDChunkCollector: Get "カードID" from line
-                CardIDChunkCollector -> CardIDChunkCollector: Append the "カードID" into `tmpCardIDList`
+                CardIDChunkCollector -> CardIDChunkCollector: Get **"カードID"** from line
+                CardIDChunkCollector -> CardIDChunkCollector: Append the **"カードID"** into `tmpCardIDList`
                 alt#Gold the length of `tmpCardIDList` is equal into 1,000
                     CardIDChunkCollector -> CardIDChunkCollector: Append `tmpCardIDList` into `cardIDChunk`
                 end
@@ -57,11 +57,15 @@ group Task Consumer
             CardIDChunkCollector --> ListUserIDWorker: Return `cardIDChunk`
             deactivate CardIDChunkCollector
         end
+        note right of ListUserIDWorker: var userIDList []int64
+        ListUserIDWorker -> ListUserIDWorker: Initialize empty arrays for storing user id
         loop#LightBlue the length of `cardIDChunk`
             note right of ListUserIDWorker: SELECT * FROM CardStatuses WHERE CardId IN UNNEST (@CardIDList)
-            ListUserIDWorker -> Spanner: Fetch list of CardStatuses in batch
+            ListUserIDWorker -> Spanner: Fetch list of **CardStatuses** in batch
+            ListUserIDWorker -> userIDToCardList: Store the list of **CardStatuses** tied to user id to *sync.Map
+            ListUserIDWorker -> ListUserIDWorker: Append the user id into `userIDList`
         end
-        ListUserIDWorker -> ListUserIDManager: Return the result of fetching user id
+        ListUserIDWorker -> ListUserIDManager: Return the `userIDList`
         deactivate ListUserIDWorker
     end
 end

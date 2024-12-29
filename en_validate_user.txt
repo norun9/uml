@@ -3,10 +3,9 @@ skinparam defaultFontName Georgia
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 participant validateUser
 participant Validator
-participant UserIDListFetcher
-
-entity UserIDList
-entity TaskChunnel << (C, #f8fca4) >>
+participant ListUserIDManager
+participant ListUserIDWorker
+participant CardIDChunkCollector
 entity ResultChunnel << (C, #f8fca4) >>
 
 database userIDToCardList << (L, #ADD1B2) >>
@@ -29,35 +28,60 @@ create Validator
 validateUser -> Validator
 activate Validator
 
-create UserIDListFetcher
-
-Validator -> UserIDListFetcher
-activate UserIDListFetcher
+Validator -> ListUserIDManager
+activate ListUserIDManager
 group Task Consumer
     loop#LightBlue `workerCnt` specified by the command arguments
-        note right of UserIDListFetcher: Goroutines start when the `TaskProducer` feeds file paths into the task channel
+        ListUserIDManager -> ListUserIDWorker
+        activate ListUserIDWorker
+        ListUserIDWorker -> CardIDChunkCollector
+        
+        loop#LightBlue 【<font color=red>Goroutine</font>】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
+            activate CardIDChunkCollector
+            CardIDChunkCollector -> tmp: Fetch the chunk file, and open it
+            
+            note right of CardIDChunkCollector : var cardIDChunk [][]string\nvar tmpCardIDList []string
+            CardIDChunkCollector -> CardIDChunkCollector: Initialize empty arrays for storing "カードID"
+            loop#SkyBlue
+                CardIDChunkCollector -> CardIDChunkCollector: Read one line
+                alt#Gold EOF
+                    CardIDChunkCollector -> CardIDChunkCollector: Exit loop
+                end
+                CardIDChunkCollector -> CardIDChunkCollector: Get "カードID" from line
+                CardIDChunkCollector -> CardIDChunkCollector: Append the "カードID" into `tmpCardIDList`
+                alt#Gold the length of `tmpCardIDList` is equal into 1,000
+                    CardIDChunkCollector -> CardIDChunkCollector: Append `tmpCardIDList` into `cardIDChunk`
+                end
+            end
+            CardIDChunkCollector --> ListUserIDWorker: Return `cardIDChunk`
+            deactivate CardIDChunkCollector
+        end
+        loop#LightBlue the length of `cardIDChunk`
+            note right of ListUserIDWorker: SELECT * FROM CardStatuses WHERE CardId IN UNNEST (@CardIDList)
+            ListUserIDWorker -> Spanner: Fetch list of CardStatuses in batch
+        end
+        ListUserIDWorker -> ListUserIDManager: Return the result of fetching user id
+        deactivate ListUserIDWorker
     end
 end
 
 group Task Producer
     loop#LightBlue the number of the chunk file paths
-        UserIDListFetcher -> TaskChunnel: Feed file paths into the task channel
+        ListUserIDManager -> TaskChunnel: Feed file paths into the task channel
     end
 end
 
 
 group Collect the results from the ResultChunnel
-    note right of UserIDListFetcher: Goroutines start
+    note right of ListUserIDManager: Goroutines start
     loop#LightBlue `workerCnt` specified by the command arguments
         
     end
 end
 
-deactivate UserIDListFetcher
+deactivate ListUserIDManager
 
 deactivate Validator
-
-validateUser -> Spanner: Insert "end" record for the validateUser phase
 
 deactivate validateUser
 

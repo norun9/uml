@@ -3,94 +3,55 @@ skinparam defaultFontName Georgia
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 participant validateUser
 participant Validator
-participant ListUserIDManager
-participant ListUserIDWorker
-participant CardIDChunkCollector
+participant ValidateUserManager
+participant ValidateUserWorker
+participant UserValiditySetter
+
+participant Mercari_UserJP as ms << (S, #a4edfc) >>
 
 entity TaskChannel << (L, #ADD1B2) >>
 entity ResultChannel << (L, #ADD1B2) >>
 
 database userIDToCardList << (L, #ADD1B2) >>
-database "/tmp" as tmp << (L, #ADD1B2) >>
+database cardIDToUserValidity << (L, #ADD1B2) >>
 database Spanner << (R, #FFBBBB) >>
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 activate validateUser
-validateUser -> validateUser: Get the chunk file paths of "Data" records from arguments
-validateUser -> Spanner: Check if Phase 3 (chunkDataRecord) is complete
-alt#Gold Phase 3 (chunkDataRecord) is complete
-    validateUser --> validateUser: Continue processing
-else
-    validateUser --> validateUser: Return error and terminate processing
-end
-
-validateUser -> Spanner: Insert "start" record for the validateUser phase
 
 create Validator
 validateUser -> Validator
 activate Validator
 
-Validator -> ListUserIDManager
-activate ListUserIDManager
+Validator -> ValidateUserManager: Give the `userIDList` generated in **Step 1**
+activate ValidateUserManager
 group Task Consumer
     loop#LightBlue `workerCnt` specified by the command arguments
-        ListUserIDManager -> ListUserIDWorker
-        activate ListUserIDWorker
-        ListUserIDWorker -> CardIDChunkCollector
-        
+        ValidateUserManager -> ValidateUserWorker
+        activate ValidateUserWorker
+        ValidateUserWorker -> UserValiditySetter
+    
         loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
-            activate CardIDChunkCollector
-            TaskChannel --> CardIDChunkCollector: Get the chunk file path from channel
-            CardIDChunkCollector -> tmp: Fetch the chunk file and open it
-            note right of CardIDChunkCollector : var cardIDChunk [][]string\nvar tmpCardIDList []string
-            CardIDChunkCollector -> CardIDChunkCollector: Initialize empty arrays for storing "カードID"
-            loop#SkyBlue
-                CardIDChunkCollector -> CardIDChunkCollector: Read one line
-                alt#Gold EOF
-                    CardIDChunkCollector -> CardIDChunkCollector: Exit loop
-                end
-                CardIDChunkCollector -> CardIDChunkCollector: Get **"カードID"** from line
-                CardIDChunkCollector -> CardIDChunkCollector: Append the **"カードID"** into `tmpCardIDList`
-                alt#Gold the length of `tmpCardIDList` is equal into 1,000
-                    CardIDChunkCollector -> CardIDChunkCollector: Append `tmpCardIDList` into `cardIDChunk`
-                end
+            activate UserValiditySetter
+            TaskChannel --> UserValiditySetter: Get user id from the task channel
+            UserValiditySetter -> ms: **GetIsAlive()**: Contact **mercari-user-jp** with the user id to check the withdrawal status
+            UserValiditySetter -> UserValiditySetter: Store the user validity in variable
+            UserValiditySetter -> userIDToCardList: Fetch list of card by user id
+            loop#SkyBlue the length of card
+                UserValiditySetter -> cardIDToUserValidity: Store the user validity tied to the card id to *sync.Map
             end
-            CardIDChunkCollector --> ListUserIDWorker: Return `cardIDChunk`
-            deactivate CardIDChunkCollector
+            deactivate UserValiditySetter
         end
-        note right of ListUserIDWorker: var userIDList []int64
-        ListUserIDWorker -> ListUserIDWorker: Initialize empty arrays for storing user id
-        loop#LightBlue the length of `cardIDChunk`
-            note right of ListUserIDWorker: SELECT * FROM CardStatuses WHERE CardId IN UNNEST (@CardIDList)
-            ListUserIDWorker -> Spanner: Fetch list of **CardStatuses** in batch
-            ListUserIDWorker -> userIDToCardList: Store the list of **CardStatuses** tied to user id to *sync.Map
-            ListUserIDWorker -> ListUserIDWorker: Append the user id into `userIDList`
-        end
-        ListUserIDWorker --> ListUserIDManager: Return the `userIDList`
-        deactivate ListUserIDWorker
-        ListUserIDManager -> ResultChannel: Send `userIDList` to the channel managing results
+        deactivate ValidateUserWorker
     end
 end
 
 group Task Producer
     loop#LightBlue the number of the chunk file paths
-        ListUserIDManager -> TaskChannel: Feed file paths into the task channel
+        ValidateUserManager -> TaskChannel: Feed user id into the task channel
     end
 end
 
-
-group Collect the results from the ResultChannel
-    note right of ListUserIDManager: var userIDList []int64
-    ListUserIDManager -> ListUserIDManager: Initialize empty arrays for storing user id
-    loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of results
-        ListUserIDManager -> ListUserIDManager: sync.Mutex.Lock()
-        ListUserIDManager -> ListUserIDManager: Append the result from the `Task Consumer` into `userIDList`(shared resource)
-        ListUserIDManager -> ListUserIDManager: sync.Mutex.UnLock()
-    end
-end
-
-ListUserIDManager --> Validator: Return the `userIDList`
-
-deactivate ListUserIDManager
+deactivate ValidateUserManager
 
 deactivate Validator
 

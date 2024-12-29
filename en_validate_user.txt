@@ -78,10 +78,10 @@ group Task Producer
 end
 
 
-group Collect the results from the ResultChunnel
+group Collect the results from the ResultChannel
     note right of ListUserIDManager: var userIDList []int64
     ListUserIDManager -> ListUserIDManager: Initialize empty arrays for storing user id
-    loop#LightBlue 【**<font color=red>Goroutine</font>**】 
+    loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of results
         ListUserIDManager -> ListUserIDManager: sync.Mutex.Lock()
         ListUserIDManager -> ListUserIDManager: Append the result from the `Task Consumer` into `userIDList`(shared resource)
         ListUserIDManager -> ListUserIDManager: sync.Mutex.UnLock()

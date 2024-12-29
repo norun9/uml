@@ -65,8 +65,9 @@ group Task Consumer
             ListUserIDWorker -> userIDToCardList: Store the list of **CardStatuses** tied to user id to *sync.Map
             ListUserIDWorker -> ListUserIDWorker: Append the user id into `userIDList`
         end
-        ListUserIDWorker -> ListUserIDManager: Return the `userIDList`
+        ListUserIDWorker --> ListUserIDManager: Return the `userIDList`
         deactivate ListUserIDWorker
+        ListUserIDManager -> ResultChannel: Send `userIDList` to the channel managing results
     end
 end
 
@@ -78,11 +79,16 @@ end
 
 
 group Collect the results from the ResultChunnel
-    note right of ListUserIDManager: Goroutines start
-    loop#LightBlue `workerCnt` specified by the command arguments
-        
+    note right of ListUserIDManager: var userIDList []int64
+    ListUserIDManager -> ListUserIDManager: Initialize empty arrays for storing user id
+    loop#LightBlue 【**<font color=red>Goroutine</font>**】 
+        ListUserIDManager -> ListUserIDManager: sync.Mutex.Lock()
+        ListUserIDManager -> ListUserIDManager: Append the result from the `Task Consumer` into `userIDList`(shared resource)
+        ListUserIDManager -> ListUserIDManager: sync.Mutex.UnLock()
     end
 end
+
+ListUserIDManager --> Validator: Return the `userIDList`
 
 deactivate ListUserIDManager
 

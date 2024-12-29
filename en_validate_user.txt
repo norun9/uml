@@ -1,0 +1,64 @@
+@startuml en_validate_user
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant validateUser
+participant Validator
+participant UserIDListFetcher
+
+entity UserIDList
+entity TaskChunnel << (C, #f8fca4) >>
+entity ResultChunnel << (C, #f8fca4) >>
+
+database userIDToCardList << (L, #ADD1B2) >>
+database cardIDToUserValidity << (L, #ADD1B2) >>
+database "/tmp" as tmp << (L, #ADD1B2) >>
+database Spanner << (R, #FFBBBB) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+activate validateUser
+validateUser -> validateUser: Get the chunk file paths of "Data" records from arguments
+validateUser -> Spanner: Check if Phase 3 (chunkDataRecord) is complete
+alt#Gold Phase 3 (chunkDataRecord) is complete
+    validateUser --> validateUser: Continue processing
+else
+    validateUser --> validateUser: Return error and terminate processing
+end
+
+validateUser -> Spanner: Insert "start" record for the validateUser phase
+
+create Validator
+validateUser -> Validator
+activate Validator
+
+create UserIDListFetcher
+
+Validator -> UserIDListFetcher
+activate UserIDListFetcher
+group Task Consumer
+    loop#LightBlue `workerCnt` specified by the command arguments
+        note right of UserIDListFetcher: Goroutines start when the `TaskProducer` feeds file paths into the task channel
+    end
+end
+
+group Task Producer
+    loop#LightBlue the number of the chunk file paths
+        UserIDListFetcher -> TaskChunnel: Feed file paths into the task channel
+    end
+end
+
+
+group Collect the results from the ResultChunnel
+    note right of UserIDListFetcher: Goroutines start
+    loop#LightBlue `workerCnt` specified by the command arguments
+        
+    end
+end
+
+deactivate UserIDListFetcher
+
+deactivate Validator
+
+validateUser -> Spanner: Insert "end" record for the validateUser phase
+
+deactivate validateUser
+
+@enduml

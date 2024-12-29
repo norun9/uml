@@ -1,0 +1,46 @@
+@startuml en_chunk_data_record
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant chunkDataRecord
+participant SplitFileIntoChunks
+database "/tmp" as tmp << (L, #ADD1B2) >>
+database Spanner << (R, #FFBBBB) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+activate chunkDataRecord
+chunkDataRecord -> Spanner: Verify if Phase 2 (splitFile) is complete
+alt#Gold Phase 2 (splitFile) is complete
+    chunkDataRecord --> chunkDataRecord: Proceed with processing
+else
+    chunkDataRecord --> chunkDataRecord: Return an error and terminate processing
+end
+chunkDataRecord -> Spanner: Insert "start" record for chunkDataRecord phase
+
+chunkDataRecord -> SplitFileIntoChunks
+activate SplitFileIntoChunks
+SplitFileIntoChunks -> tmp: Fetch and open the "Data" record file (/tmp/data)
+note right of SplitFileIntoChunks: The number of records in each chunk file can be specified\n using the `recordsPerChunk` flag in the command arguments.\ne.g. if each line is 131 bytes and `recordsPerChunk` is 10,\nthe buffer size will be 131 * 10 = 1,310 bytes.
+SplitFileIntoChunks -> SplitFileIntoChunks: Calculate the buffer size for reading the file content at once
+note right of SplitFileIntoChunks: var chunks []ChunkFile
+SplitFileIntoChunks -> SplitFileIntoChunks: Initialize an empty array for storing chunk file paths
+loop#LightBlue
+    SplitFileIntoChunks -> SplitFileIntoChunks: Read data from the file into the buffer\nusing `io.ReadFull(r io.Reader, buf []byte)`
+    alt#Gold EOF or ErrUnexpectedEOF
+        alt#Khaki Bytes read is greater than 0 (indicating remaining data to be written)
+            SplitFileIntoChunks -> tmp: Create a new chunk file
+            SplitFileIntoChunks -> SplitFileIntoChunks: Write the remaining data into the chunk file
+            SplitFileIntoChunks -> SplitFileIntoChunks: Append the file path to the `chunks` array
+        end
+        SplitFileIntoChunks --> SplitFileIntoChunks: Exit loop
+    end
+    SplitFileIntoChunks -> tmp: Create a new chunk file
+    SplitFileIntoChunks -> SplitFileIntoChunks: Write the data read into the chunk file
+    SplitFileIntoChunks -> SplitFileIntoChunks: Append the file path to the `chunks` array
+end
+SplitFileIntoChunks -> chunkDataRecord: Return the `chunks` array containing the paths to all chunk files
+deactivate SplitFileIntoChunks
+
+chunkDataRecord -> Spanner: Insert "end" record for chunkDataRecord phase
+deactivate chunkDataRecord
+
+@enduml

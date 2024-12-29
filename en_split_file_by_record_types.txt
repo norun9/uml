@@ -1,0 +1,49 @@
+@startuml en_split_file_by_record_types
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant splitFile
+participant SplitFileByRecordTypes
+database "/tmp" as tmp << (L, #ADD1B2) >>
+database Spanner << (R, #FFBBBB) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+activate splitFile
+splitFile -> splitFile: Get the local file path of the "有効性チェック依頼ファイル" from arguments
+splitFile -> Spanner: Check if Phase 1 (fetch) is complete
+alt#Gold Phase 1 (fetch) is complete
+    splitFile --> splitFile: Continue processing
+else
+    splitFile --> splitFile: Return error and terminate processing
+end
+splitFile -> Spanner: Insert "start" record for splitFile phase
+splitFile -> SplitFileByRecordTypes
+activate SplitFileByRecordTypes
+SplitFileByRecordTypes -> tmp: Create new files for writing "Header", "Data", "Trailer", and "End" records
+SplitFileByRecordTypes -> SplitFileByRecordTypes: Prepare writers for each file
+SplitFileByRecordTypes -> tmp: Open the "有効性チェック依頼ファイル" and prepare a reader
+loop#LightBlue
+    SplitFileByRecordTypes -> SplitFileByRecordTypes: Read one line
+    alt#Gold EOF
+        SplitFileByRecordTypes -> SplitFileByRecordTypes: Exit loop
+    end
+    note right of SplitFileByRecordTypes: Use the "Record Type" at the beginning of the line to determine the record type
+    SplitFileByRecordTypes -> SplitFileByRecordTypes: Retrieve the first character of the line
+    alt#Gold Record type is <font color=red>Header</font>
+        SplitFileByRecordTypes -> SplitFileByRecordTypes: Write to the header file
+    else Record type is <font color=red>Data</font>
+        SplitFileByRecordTypes -> SplitFileByRecordTypes: Write to the data file
+    else Record type is <font color=red>Trailer</font>
+        SplitFileByRecordTypes -> SplitFileByRecordTypes: Write to the trailer file
+    else Record type is <font color=red>End</font>
+        SplitFileByRecordTypes -> SplitFileByRecordTypes: Write to the end file
+    else
+        SplitFileByRecordTypes --> SplitFileByRecordTypes: Exit loop and return error (invalid record section)
+    end
+end
+SplitFileByRecordTypes -> splitFile: Return local file paths of each file
+deactivate SplitFileByRecordTypes
+
+splitFile -> Spanner: Insert "end" record for splitFile phase
+
+deactivate splitFile
+
+@enduml

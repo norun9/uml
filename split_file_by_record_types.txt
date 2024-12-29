@@ -2,13 +2,13 @@
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 participant splitFile
 participant SplitFileByRecordTypes
-database "/tmp" as tmp
-database Spanner
+database "/tmp" as tmp << (L, #ADD1B2) >>
+database Spanner << (R, #FFBBBB) >>
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 activate splitFile
 splitFile -> splitFile: 「有効性チェック依頼ファイル」のローカルファイルパスを引数から取得
 splitFile -> Spanner: フェーズ1(fetch)が終了しているかを確認
-alt フェーズ1(fetch)が終了している
+alt#Gold フェーズ1(fetch)が終了している
     splitFile --> splitFile: 処理続行
 else
     splitFile --> splitFile: エラーを返却し、処理終了
@@ -19,14 +19,14 @@ activate SplitFileByRecordTypes
 SplitFileByRecordTypes -> tmp: 「ヘッダ」「データ」「トレイラー」「エンド」レコード書き込み用のファイルを新規作成
 SplitFileByRecordTypes -> SplitFileByRecordTypes: 各ファイルのWriterを用意
 SplitFileByRecordTypes -> SplitFileByRecordTypes: 「有効性チェック依頼ファイル」をOpen、Readerを用意
-loop
+loop#LightBlue
     SplitFileByRecordTypes -> SplitFileByRecordTypes: 一行読み込み
-    alt EOF
+    alt#Gold EOF
         SplitFileByRecordTypes -> SplitFileByRecordTypes: break
     end
     note right of SplitFileByRecordTypes: レコードタイプの判定には文頭の「レコード区分」を用いる
     SplitFileByRecordTypes -> SplitFileByRecordTypes: 行の先頭の文字を取得
-    alt レコード区分が「ヘッダ」
+    alt#Gold レコード区分が「ヘッダ」
         SplitFileByRecordTypes -> SplitFileByRecordTypes: ヘッダ用ファイルに書き込み
     else レコード区分が「データ」
         SplitFileByRecordTypes -> SplitFileByRecordTypes: データ用ファイルに書き込み
@@ -41,6 +41,8 @@ end
 SplitFileByRecordTypes -> splitFile: 各ファイルのローカルファイルパスを返却
 deactivate SplitFileByRecordTypes
 
+splitFile -> Spanner: splitFileフェーズ""レコード挿入
 
 deactivate splitFile
+
 @enduml

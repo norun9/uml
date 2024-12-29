@@ -6,10 +6,11 @@ participant Validator
 participant ListUserIDManager
 participant ListUserIDWorker
 participant CardIDChunkCollector
-entity ResultChunnel << (C, #f8fca4) >>
+
+entity TaskChannel << (C, #f8fca4) >>
+entity ResultChannel << (C, #f8fca4) >>
 
 database userIDToCardList << (L, #ADD1B2) >>
-database cardIDToUserValidity << (L, #ADD1B2) >>
 database "/tmp" as tmp << (L, #ADD1B2) >>
 database Spanner << (R, #FFBBBB) >>
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -38,8 +39,8 @@ group Task Consumer
         
         loop#LightBlue 【<font color=red>Goroutine</font>】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
             activate CardIDChunkCollector
-            CardIDChunkCollector -> tmp: Fetch the chunk file, and open it
-            
+            TaskChannel --> CardIDChunkCollector: Get the chunk file path from channel
+            CardIDChunkCollector -> tmp: Fetch the chunk file and open it
             note right of CardIDChunkCollector : var cardIDChunk [][]string\nvar tmpCardIDList []string
             CardIDChunkCollector -> CardIDChunkCollector: Initialize empty arrays for storing "カードID"
             loop#SkyBlue
@@ -67,7 +68,7 @@ end
 
 group Task Producer
     loop#LightBlue the number of the chunk file paths
-        ListUserIDManager -> TaskChunnel: Feed file paths into the task channel
+        ListUserIDManager -> TaskChannel: Feed file paths into the task channel
     end
 end
 

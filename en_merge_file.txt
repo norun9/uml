@@ -1,0 +1,135 @@
+@startuml en_merge_file
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant ResultFileGenerator
+participant HerderRecordMerger
+participant DataRecordMerger
+participant TrailerStatsCounter
+participant TrailerRecordMerger
+participant EndRecordMerger
+participant ChecksumWriter
+
+entity TrailerStats_Struct as TrailerStats << (L, #ADD1B2) >>
+
+database toUniqMerchantID << (L, #ADD1B2) >>
+database userIDToCardList << (L, #ADD1B2) >>
+database "/tmp" as tmp << (L, #ADD1B2) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+activate ResultFileGenerator
+
+note right of ResultFileGenerator: The file paths include:\n- HeaderRecord file path\n- DataRecord file path\n- TrailerRecord file path\n- EndRecord file path
+ResultFileGenerator -> ResultFileGenerator: Retrieve the file paths path from function arguments
+ResultFileGenerator -> tmp: Create a file named "有効性チェック結果ファイル" (/tmp/merp_recurringfile_result_YYYYMMDD)
+ResultFileGenerator -> ResultFileGenerator: Create writer for the file
+
+create HerderRecordMerger
+ResultFileGenerator -> HerderRecordMerger
+activate HerderRecordMerger
+HerderRecordMerger -> tmp: Open the header record file (/tmp/header)
+HerderRecordMerger -> HerderRecordMerger: Read one line
+HerderRecordMerger -> HerderRecordMerger: Write the line to "有効性チェック結果ファイル"
+deactivate HerderRecordMerger
+
+create DataRecordMerger
+ResultFileGenerator -> DataRecordMerger
+activate DataRecordMerger
+DataRecordMerger -> tmp: Create a csv file for the result (/tmp/merp_recurringfile_result_YYYYMMDD.csv)
+DataRecordMerger -> DataRecordMerger: Create writer for the csv file
+note right of DataRecordMerger: CSV header includes:\nレコ－ド区分,カードID,有効期限,加盟店使用1,加盟店使用2,カード番号更新サイン,有効期限更新サイン,新カードID,新有効期限,有効性判定結果,加盟店番号,行番号
+DataRecordMerger -> DataRecordMerger: Write header line to the csv file
+create toUniqMerchantID
+DataRecordMerger -> toUniqMerchantID: Initialize a map to store unique merchant id for counting merchants
+DataRecordMerger -> tmp: Open the data records file (/tmp/data)
+loop#LightBlue
+    DataRecordMerger -> DataRecordMerger: Read one line
+    alt#Gold EOF
+        DataRecordMerger --> DataRecordMerger: Exit loop
+    end
+    DataRecordMerger -> DataRecordMerger: Get MerchantID("加盟店番号") from the line
+    DataRecordMerger -> toUniqMerchantID: Store the MerchantID
+    create TrailerStatsCounter
+    DataRecordMerger -> TrailerStatsCounter:
+    activate TrailerStatsCounter
+
+    TrailerStatsCounter -> TrailerStats: Countup InputCount "処理件数"
+    TrailerStatsCounter -> TrailerStatsCounter: Get the value of "有効性判定結果"
+
+    alt#Gold "有効性判定結果" == 0 ("有効性OK")
+        TrailerStatsCounter -> TrailerStats: Countup OkCount
+    else "有効性判定結果" == 1 ("有効性NG")
+        TrailerStatsCounter -> TrailerStats: Countup NgCount
+    else "有効性判定結果" == 2 ("照合エラー")
+        TrailerStatsCounter -> TrailerStats: Countup ErrorCount
+    end
+
+    TrailerStatsCounter -> TrailerStatsCounter: Get the value of "有効性期限更新サイン"
+    alt#Gold "有効性期限更新サイン" == 1 ("YES")
+        TrailerStatsCounter -> TrailerStats: Countup ExpirationDateUpdateCount
+    end
+    TrailerStatsCounter -> TrailerStatsCounter: Get the value of "カード番号更新サイン"
+    alt#Gold "カード番号更新サイン" == 1 ("YES")
+        TrailerStatsCounter -> TrailerStats: Countup CardIDUpdateCount
+    end
+    deactivate TrailerStatsCounter
+
+    DataRecordMerger -> DataRecordMerger: Write the line to "有効性チェック結果ファイル"
+    DataRecordMerger -> DataRecordMerger: Write the converted line to the CSV file
+end
+
+note right of DataRecordMerger: Store the count in a memory pointer for later processing
+toUniqMerchantID --> DataRecordMerger: Count the number of unique merchants "加盟店数"
+
+deactivate DataRecordMerger
+
+
+create TrailerRecordMerger
+ResultFileGenerator -> TrailerRecordMerger
+activate TrailerRecordMerger
+TrailerRecordMerger -> tmp: Open the trailer record file (/tmp/trailer)
+TrailerRecordMerger -> TrailerRecordMerger: Read one line
+
+TrailerStats --> TrailerRecordMerger: Get the value of InputCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the InputCount to the line
+
+TrailerStats --> TrailerRecordMerger: Get the value of OkCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the OkCount to the line
+
+TrailerStats --> TrailerRecordMerger: Get the value of NgCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the NgCount to the line
+
+TrailerStats --> TrailerRecordMerger: Get the value of ErrorCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the ErrorCount to the line
+
+TrailerStats --> TrailerRecordMerger: Get the value of CardIDUpdateCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the CardIDUpdateCount to the line
+
+TrailerStats --> TrailerRecordMerger: Get the value of ExpirationDateUpdateCount
+TrailerRecordMerger -> TrailerRecordMerger: Set the ExpirationDateUpdateCount to the line
+
+TrailerRecordMerger -> TrailerRecordMerger: Write the updated line to "有効性チェック結果ファイル"
+deactivate TrailerRecordMerger
+
+
+create EndRecordMerger
+ResultFileGenerator -> EndRecordMerger
+activate EndRecordMerger
+EndRecordMerger -> tmp: Open the end record file (/tmp/end)
+EndRecordMerger -> EndRecordMerger: Read one line
+EndRecordMerger -> EndRecordMerger: Write the line to "有効性チェック結果ファイル"
+deactivate EndRecordMerger
+
+userIDToCardList --> ResultFileGenerator: Get "対象ユーザー数" by counting the number of key in map
+ResultFileGenerator -> ChecksumWriter
+activate ChecksumWriter
+ChecksumWriter -> tmp: Fetch and open "有効性チェック結果ファイル" from local storage
+ChecksumWriter -> ChecksumWriter: Calculate MD5 checksum of "有効性チェック結果ファイル"
+ChecksumWriter -> tmp: Create a MD5 checksum file of "有効性チェック結果ファイル"
+ChecksumWriter -> ChecksumWriter: Write the MD5 checksum to the file
+deactivate ChecksumWriter
+
+note right of ResultFileGenerator: the output includes:\n- the statics of resulting ("処理件数" and "対象ユーザー数", "加盟店数")
+ResultFileGenerator --> ResultFileGenerator: Return the output
+
+deactivate ResultFileGenerator
+
+@enduml

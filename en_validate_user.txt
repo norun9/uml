@@ -6,19 +6,15 @@ participant Validator
 participant ValidateUserManager
 participant ValidateUserWorker
 participant UserValiditySetter
-
 participant Mercari_UserJP as ms << (S, #a4edfc) >>
 
 entity TaskChannel << (L, #ADD1B2) >>
-entity ResultChannel << (L, #ADD1B2) >>
 
 database userIDToCardList << (L, #ADD1B2) >>
 database cardIDToUserValidity << (L, #ADD1B2) >>
-database Spanner << (R, #FFBBBB) >>
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 activate validateUser
 
-create Validator
 validateUser -> Validator
 activate Validator
 
@@ -30,9 +26,10 @@ group Task Consumer
         activate ValidateUserWorker
         ValidateUserWorker -> UserValiditySetter
     
-        loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of tasks(= chunk file paths) which are fed from `Task Producer`
+        loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of tasks(= array of user id) which are fed from `Task Producer`
             activate UserValiditySetter
             TaskChannel --> UserValiditySetter: Get user id from the task channel
+            note right of UserValiditySetter: In addition to GetIsAlive, other confirmation processes\nsuch as inquiries to **defpay** will come in the future.
             UserValiditySetter -> ms: **GetIsAlive()**: Contact **mercari-user-jp** with the user id to check the withdrawal status
             UserValiditySetter -> UserValiditySetter: Store the user validity in variable
             UserValiditySetter -> userIDToCardList: Fetch list of card by user id

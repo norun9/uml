@@ -15,8 +15,8 @@ database Spanner << (R, #FFBBBB) >>
 activate fetch
 alt#Gold Is the skip flag True?
     note right of fetch: When testing locally, SFTPServer is not used, so the process is skipped.
-    fetch -> fetch: Process terminates
-    return Returns the local "有効性チェック依頼ファイル" specified\nby the `localRequestFilePath` flag in the command arguments.
+    fetch -> fetch: Process exit
+    return Returns the local request file named "有効性チェック依頼ファイル" specified\nby the `localRequestFilePath` flag in the command arguments.
 else
     fetch --> fetch: Continue process
 end
@@ -26,15 +26,14 @@ fetch -> GMOPGInteractor
 
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 activate GMOPGInteractor
-note right of GMOPGInteractor: ""local file paths"":\n""- 有効性チェック依頼ファイル:/tmp/merp_recurringfile_req_YYYYMMDD""\n""- MD5 checksum:/tmp/merp_recurringfile_req_YYYYMMDD.md5""
-loop#LightBlue 1, 2 ("有効性チェック依頼ファイル", "MD5 checksum")
-    GMOPGInteractor -> GMOPGInteractor: Generate SFTP remote paths and local file paths (/tmp)
+note right of GMOPGInteractor: local file paths:\n- request file:/tmp/merp_recurringfile_req_YYYYMMDD\n- MD5 checksum:/tmp/merp_recurringfile_req_YYYYMMDD.md5
+loop#LightBlue 1, 2 (request file, "MD5 checksum")
+    GMOPGInteractor -> GMOPGInteractor: Generate SFTP remote paths and local file paths
     create SFTPClient
     GMOPGInteractor -> SFTPClient
     activate SFTPClient 
-    SFTPClient -> tmp: Create new local file
-    tmp --> SFTPClient: Return a file
-    SFTPClient -> SFTPServer: Fetch remote file
+    SFTPClient -> tmp: Create a new local file
+    SFTPClient -> SFTPServer: Fetch a remote file
     SFTPClient -> SFTPClient: Write file content to local file
     return Return local file path
     deactivate SFTPClient
@@ -42,7 +41,7 @@ end
 alt#Gold One or more errors occurred while fetching files from SFTPServer
     GMOPGInteractor --> fetch: Return error
 else
-    GMOPGInteractor --> fetch: Return local file paths of "有効性チェック依頼ファイル" and "MD5 checksum", continue process
+    GMOPGInteractor --> fetch: Return local file paths of "request file" and "MD5 checksum", continue process
 end
 deactivate GMOPGInteractor
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -51,9 +50,9 @@ fetch -> ValidateMD5Checksum
 !pragma teoz true
 box "Validity Check Request File Corruption Check"
     activate ValidateMD5Checksum
-    ValidateMD5Checksum -> tmp: Fetch and open "有効性チェック依頼ファイル" and "MD5 checksum" from local storage
+    ValidateMD5Checksum -> tmp: Fetch and open "request file" and "MD5 checksum" from local storage
     tmp --> ValidateMD5Checksum: Return files
-    ValidateMD5Checksum -> ValidateMD5Checksum: Calculate MD5 checksum of "有効性チェック依頼ファイル"
+    ValidateMD5Checksum -> ValidateMD5Checksum: Calculate MD5 checksum of "request file"
     ValidateMD5Checksum -> ValidateMD5Checksum: Compare calculated checksum with "MD5 checksum"
 end box
 alt#Gold Checksums do not match
@@ -66,7 +65,7 @@ deactivate ValidateMD5Checksum
 create GCSInteractor
 fetch -> GCSInteractor
 activate GCSInteractor
-GCSInteractor -> tmp: Fetch "有効性チェック依頼ファイル" from local storage
+GCSInteractor -> tmp: Fetch "request file" from local storage
 tmp --> GCSInteractor: Return a file
 GCSInteractor -> GCSInteractor: Generate GCS object path: "cardvaliditycheck/request/dt=YYYY-MM-DD/merp_recurringfile_req_YYYYMMDD"
 GCSInteractor -> GCS: Upload

@@ -1,0 +1,16 @@
+@startuml en_end_validate_user
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant validateUser
+
+database Spanner << (R, #FFBBBB) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+activate validateUser
+
+validateUser -> Spanner: Insert "end" record for the validateUser phase
+
+validateUser --> validateUser: Return `userIDToCardList` and `cardIDToUserValidity`
+
+deactivate validateUser
+
+@enduml

@@ -48,8 +48,8 @@ group Task Consumer
                 alt#Gold EOF
                     CardIDChunkCollector -> CardIDChunkCollector: Exit loop
                 end
-                CardIDChunkCollector -> CardIDChunkCollector: Get **"カードID"** from line
-                CardIDChunkCollector -> CardIDChunkCollector: Append the **"カードID"** into `tmpCardIDList`
+                CardIDChunkCollector -> CardIDChunkCollector: Get CardID named **"カードID"** from the line
+                CardIDChunkCollector -> CardIDChunkCollector: Append the CardID into `tmpCardIDList`
                 alt#Gold the length of `tmpCardIDList` is equal into 1,000
                     CardIDChunkCollector -> CardIDChunkCollector: Append `tmpCardIDList` into `cardIDChunk`
                 end
@@ -62,8 +62,8 @@ group Task Consumer
         loop#LightBlue the length of `cardIDChunk`
             note right of ListUserIDWorker: SELECT * FROM CardStatuses WHERE CardId IN UNNEST (@CardIDList)
             ListUserIDWorker -> Spanner: Fetch list of **CardStatuses** in batch
-            ListUserIDWorker -> userIDToCardList: Store the list of **CardStatuses** tied to user id to *sync.Map
-            ListUserIDWorker -> ListUserIDWorker: Append the user id into `userIDList`
+            ListUserIDWorker -> userIDToCardList: Store the list of **CardStatuses** tied to UserID to *sync.Map
+            ListUserIDWorker -> ListUserIDWorker: Append the UserID into `userIDList`
         end
         ListUserIDWorker --> ListUserIDManager: Return the `userIDList`
         deactivate ListUserIDWorker
@@ -80,8 +80,9 @@ end
 
 group Collect the results from the ResultChannel
     note right of ListUserIDManager: var userIDList []int64
-    ListUserIDManager -> ListUserIDManager: Initialize empty arrays for storing user id
+    ListUserIDManager -> ListUserIDManager: Initialize empty arrays for storing UserID
     loop#LightBlue 【**<font color=red>Goroutine</font>**】 the number of results
+        ResultChannel --> ListUserIDManager: Take the result(= UserID)
         ListUserIDManager -> ListUserIDManager: sync.Mutex.Lock()
         ListUserIDManager -> ListUserIDManager: Append the result from the `Task Consumer` into `userIDList`(shared resource)
         ListUserIDManager -> ListUserIDManager: sync.Mutex.UnLock()

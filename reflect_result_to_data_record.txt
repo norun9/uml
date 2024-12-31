@@ -1,0 +1,126 @@
+@startuml reflect_result_to_data_record
+skinparam defaultFontName Georgia
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+participant DataRecordResultGenerator
+participant RecordUpdater
+participant PrimaryCardFetcher
+
+database userIDToCardList << (L, #ADD1B2) >>
+database cardIDToUserValidity << (L, #ADD1B2) >>
+database userIDToPrimaryCard << (L, #ADD1B2) >>
+database "/tmp" as tmp << (L, #ADD1B2) >>
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+activate DataRecordResultGenerator
+
+DataRecordResultGenerator -> DataRecordResultGenerator: Retrieve `userIDToCardList`, `cardIDToUserValidity`, and\n"Data" record file path from function arguments
+
+DataRecordResultGenerator -> tmp: Create a result file for "Data" record to reflect their validity (/tmp/data_record_result)
+DataRecordResultGenerator -> DataRecordResultGenerator: Prepare writer of the result file.
+
+loop#LightBlue
+    DataRecordResultGenerator -> DataRecordResultGenerator: Read one line
+    alt#Gold EOF
+        DataRecordResultGenerator -> DataRecordResultGenerator: Exit loop
+    end
+    DataRecordResultGenerator -> RecordUpdater
+    activate RecordUpdater
+    RecordUpdater -> RecordUpdater: Get CardID referred to as OriginalCardID from the line
+    RecordUpdater -> cardIDToUserValidity: Load UserValidity by the OriginalCardID
+    alt#Gold The value does not exist
+        RecordUpdater --> DataRecordResultGenerator : Exit loop and return errCardVerification("照合エラー")
+    end
+    RecordUpdater -> RecordUpdater: Get UserID from the value of UserValidity
+    RecordUpdater -> userIDToCardList: Load CardList by the UserID
+    group Card Validation
+        loop#SkyBlue the length of CardList
+            note right of RecordUpdater: Check if a valid card exists in CardList.\nIf not, returns errCardVerification("照合エラー")
+            alt#Gold CardID == OriginalCardID && Card.IssuedAt.Valid
+                RecordUpdater --> RecordUpdater: Return nil
+            else
+                RecordUpdater -> RecordUpdater: Continue checking the next card
+            end
+        end
+        RecordUpdater --> DataRecordResultGenerator: Return errCardVerification("照合エラー")
+    end
+    
+    alt#Gold UserValidity.Valid == false
+        RecordUpdater -> RecordUpdater: Update the valitity check result called "有効性判定結果" to 1 ("有効性NG")
+    end
+    RecordUpdater -> userIDToPrimaryCard: Load a PrimaryCard by UserID
+    alt#Gold The value(= PrimaryCard) exist
+        alt#Khaki the PrimaryCard != nil
+            RecordUpdater -> RecordUpdater: Update "valitity check result" to 0 ("有効性OK")
+        else
+            RecordUpdater -> RecordUpdater: Update "valitity check result" to 1 ("有効性NG")
+        end
+    else The value(= PrimaryCard) does not exist
+        note right of RecordUpdater: This is the first time fetching PrimaryCard in the loop
+        RecordUpdater -> PrimaryCardFetcher
+        activate PrimaryCardFetcher
+        
+        note right of PrimaryCardFetcher: var priorities []cardPriority
+        PrimaryCardFetcher -> PrimaryCardFetcher: Initialize an empty array for storing priority of the card
+        loop#LightBlue the length of CardList
+            PrimaryCardFetcher -> PrimaryCardFetcher: Determine priority of the Card
+            alt#Gold Card.Status is ACTIVE, ISSUING, or SHIPPED
+                note right of PrimaryCardFetcher: Matches one of\n4(ISSUING), 5(SHIPPED), or 6(ACTIVE)
+                PrimaryCardFetcher -> PrimaryCardFetcher: PriorityFirst
+            else Card.Status is other
+                PrimaryCardFetcher -> PrimaryCardFetcher: PriorityInvalid
+            end
+            PrimaryCardFetcher -> PrimaryCardFetcher: Append the priority(PriorityFirst or PriorityInvalid) into `priorities`
+            PrimaryCardFetcher -> PrimaryCardFetcher: The primary card is determined based on the highest priority.\nIf multiple cards have the same priority, the latest IssuedAt date is used.
+            alt#Gold len(`priorities`) == 0 || `priorities`[0].priority == PriorityInvalid
+                PrimaryCardFetcher --> RecordUpdater: Return nil
+                RecordUpdater -> RecordUpdater: Update "valitity check result" to 1 ("有効性NG")
+            else
+                PrimaryCardFetcher --> RecordUpdater: Return the PrimaryCard
+            end
+            
+            deactivate PrimaryCardFetcher
+            alt#Gold PrimaryCard.IsExpired(now)
+                RecordUpdater -> RecordUpdater: Update "valitity check result" to 1 ("有効性NG")
+            else
+                RecordUpdater -> RecordUpdater: Update "valitity check result" to 0 ("有効性OK")
+            end
+            RecordUpdater -> userIDToPrimaryCard: Store the PrimaryCard tied to UserID
+
+            alt#Gold PrimaryCard != nil ("有効性OK")
+                RecordUpdater -> RecordUpdater: Get PrimaryCardID(= PrimaryCard.CardID)
+                RecordUpdater -> RecordUpdater: Get PrimaryExpirationDate(= PrimaryCard.ExpirationDate)
+                alt#Khaki OriginalCardID != PrimaryCardID
+                    RecordUpdater -> RecordUpdater: Update card id update sign called "カード番号更新サイン" to 1 ("YES")
+                    RecordUpdater -> RecordUpdater: Update new card id called "新カード会員番号" to PrimaryCardID
+                else
+                    RecordUpdater -> RecordUpdater: Update "card id update sign" to 0 ("NO")
+                end
+
+                alt#Khaki PrimaryExpirationDate.Valid && OriginalExpirationDate != PrimaryExpirationDate
+                    RecordUpdater -> RecordUpdater: Update expiration date update sign called "有効期限更新サイン" to 1 ("YES")
+                    RecordUpdater -> RecordUpdater: Update new expiration date called "新有効期限" to PrimaryExpirationDate
+                else
+                    RecordUpdater -> RecordUpdater: Update "expiration date update sign" to 0 ("NO")
+                end
+            end
+        end
+    end
+    RecordUpdater --> DataRecordResultGenerator
+    deactivate RecordUpdater
+
+    alt#Gold error != nil
+        alt#Khaki error == errCardVerification("照合エラー")
+            DataRecordResultGenerator -> DataRecordResultGenerator: Update "valitity check result" to 2 ("照合エラー")
+        else
+            DataRecordResultGenerator --> DataRecordResultGenerator: Return the error
+        end    
+    end
+
+    DataRecordResultGenerator -> DataRecordResultGenerator: Write the updated line to the result file for "Data" record
+end
+
+DataRecordResultGenerator --> DataRecordResultGenerator: Return the file path of the result file for "Data" record
+
+deactivate DataRecordResultGenerator
+
+@enduml

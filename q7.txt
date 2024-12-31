@@ -1,0 +1,57 @@
+@startuml　q7
+!define SW <<Rectangle>>
+!define PC <<Computer>>
+
+entity "PC1" as pc1
+entity "PC2" as pc2
+entity "PC3" as pc3
+entity "PC4" as pc4
+entity "PC5" as pc5
+entity "PC6" as pc6
+entity "My Computer" as my_computer
+entity "Repeater1" as repeater1
+entity "Repeater2" as repeater2
+
+rectangle "SW1 (Layer 3)" as sw1 {
+  rectangle "0/1" as primary_port
+  rectangle "0/2 (vlan20)" as secondary_port
+  rectangle "0/3 (vlan30)" as third_port
+  rectangle "0/4" as fourth_port
+}
+
+rectangle "SW2 (Layer 3)" as sw2 {
+  rectangle "0/1" as sw2_port1
+  rectangle "0/2 (vlan10)" as sw2_port2
+  rectangle "0/3 (vlan20)" as sw2_port3
+  rectangle "0/4" as sw2_port4
+}
+
+rectangle "SW3 (Layer 2)" as sw3 {
+  rectangle "1/0/1" as sw3_port1
+  rectangle "1/0/2 (vlan20)" as sw3_port2
+  rectangle "1/0/3 (vlan30)" as sw3_port3
+  rectangle "1/0/4" as sw3_port4
+}
+
+pc1 -down- secondary_port
+pc2 -down- third_port
+
+primary_port -down- repeater1
+
+fourth_port -down- repeater2
+
+repeater1 -down- my_computer
+repeater2 -down- my_computer
+
+repeater2 -down- sw3_port1
+repeater1 -down- sw2_port1
+
+sw3_port4 -down- sw2_port4
+
+pc3 -up- sw2_port2
+pc4 -up- sw2_port3
+
+pc5 -up- sw3_port2
+pc6 -up- sw3_port3
+
+@enduml
